@@ -1,0 +1,171 @@
+/*
+ * $Id: //DukePro/eagle/ulp/origins.ulp#4 $
+ * $DateTime: 2011/07/23 09:51:45 $
+ * Modified for EagleV6. Warren Brayshaw 17/11/2012
+ * Modified for cvtmount. cri-s 
+ *
+ * This will emit a list of parts with SMD pads and their origins.
+ */
+#usage "Produces a CSV list of parts with SMD pads, their orgins,"
+" and whether each is placed on the top of the board or the bottom."
+" Units of output = mm."
+
+string partName[], partPackage[], partValue[];
+real	partX[], partY[], partA[];
+int		partMirror[];
+int		numParts = 0;
+real	xExtent = 0.0;
+real	yExtent = 0.0;
+
+void CollectPartData(void) {
+	board(B) {
+		int	xExtentInt = 0;
+		int	yExtentInt = 0;
+
+		/*
+		 * Look for the wires in the Dimension layer.  Identify the largest
+		 * X value.
+		 */
+		B.wires(W) {
+			if (W.layer == 20) {
+				if (W.x1 > xExtentInt)
+					xExtentInt = W.x1;
+				if (W.x2 > xExtentInt)
+					xExtentInt = W.x2;
+				if (W.y1 > yExtentInt)
+					yExtentInt = W.y1;
+				if (W.y2 > yExtentInt)
+					yExtentInt = W.y2;
+			}
+		}
+
+		// Convert from tenths of micrometers to mm
+		//xExtent = xExtentInt / 10.0 / 25.4;
+		//yExtent = yExtentInt / 10.0 / 25.4;
+		xExtent = u2mm(xExtentInt);
+		yExtent = u2mm(yExtentInt);
+
+		B.elements(E) {
+			int isSMD = 0;
+
+			isSMD = 0;
+			E.package.contacts(C) {
+				if (C.smd) {
+					isSMD = 1;
+					break;
+				}
+			}
+			if (isSMD != 0) {
+				//real xr, yr;
+				//xr = E.x / 10;	// x coord in micrometers
+				//yr = E.y / 10;
+
+				partName[numParts] = E.name;
+				partMirror[numParts] = E.mirror;
+				partPackage[numParts] = E.package.name;
+				partValue[numParts] = E.value;
+				//partX[numParts] = xr/25.4;
+				//partY[numParts] = yr/25.4;
+				partX[numParts] = u2mm(E.x);
+				partY[numParts] = u2mm(E.y);
+                partA[numParts] = E.angle;
+				++numParts;
+			}
+		}
+	}
+}
+
+string listLines[];
+void GenListLines(void) {
+	for (int i = 0; i < numParts; ++i) {
+		sprintf(listLines[i], "%s\t%s\t%.1f\t%.1f\t%.1f\t%s\t%s",
+			partMirror[i] ?  "Bot" : "Top",
+			partName[i],
+			partX[i], partY[i], partA[i],
+			partPackage[i],
+			partValue[i]
+			);
+	}
+}
+
+void SaveList(void) {
+	string fileName;
+	string assyName;
+	board(BRD) {
+        string assyAttr;
+        string revAttr;
+
+        BRD.attributes(ATTR) {
+            if (ATTR.name == "REVISION")
+                revAttr = ATTR.value;
+            if (ATTR.name == "ASSEMBLY")
+                assyAttr = ATTR.value;
+        }
+
+        string pn;
+        pn = filesetext(filename(BRD.name), "");
+        int dashIndex;
+        dashIndex = strchr(pn, '-');
+        if (dashIndex >= 0) {
+            pn = strsub(pn, 0, dashIndex);
+        }
+
+        fileName = filedir(BRD.name) + pn;
+
+        if (assyAttr != "") {
+            fileName += "-" + assyAttr;
+        }
+        if (revAttr != "") {
+            fileName += "-Rev" + revAttr;
+        }
+        assyName = filename(fileName);
+        fileName += ".origins.csv";
+    }
+	fileName = dlgFileSave("Save Part Origins", fileName, "*.origins.csv");
+	if (fileName) {
+		string a[];
+		if (!fileglob(a, fileName) || dlgMessageBox(fileName + " exists\n\nOverwrite?", "&Yes", "-&No") == 0) {
+			output(fileName, "wt") {
+
+				printf("%s\n", assyName);
+				printf("Extents,%.1f,%.1f\n", xExtent, yExtent);
+
+				for (int i = 0; i < numParts; ++i) 
+	for (i = 0; i < numParts; ++i)
+		if (!partMirror[i]) printf("%s\n",listLines[i]);
+	for (i = 0; i < numParts; ++i)
+		if ( partMirror[i]) printf("%s\n",listLines[i]);
+			
+			}
+		}
+	}
+}
+
+CollectPartData();
+GenListLines();
+
+int selected = 0;
+dlgDialog("Part Origins") {
+	string buf;
+	dlgLabel("SMD parts only");
+	dlgLabel("Units are \"mm\"");
+	dlgListView("Top/Bottom\tName\tX\tY\tAngle\tPackage\tValue", listLines, selected);
+    dlgHBoxLayout {
+		dlgVBoxLayout {
+			sprintf(buf, "X Extent: %.1f mm", xExtent);
+			dlgLabel(buf);
+			sprintf(buf, "Y Extent: %.1f mm", yExtent);
+			dlgLabel(buf);
+
+			//dlgLabel("Extents");
+			//sprintf(buf, "(%.1f %.1f)", xExtent, yExtent);
+			//dlgLabel(buf);
+		}
+        dlgStretch(1);
+        dlgPushButton("&Save...") SaveList();
+        dlgPushButton("-Close") dlgAccept();
+    }
+};
+
+
+/* vim: set ts=4 sw=4 et ai: */
